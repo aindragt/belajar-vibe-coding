@@ -35,3 +35,29 @@ export async function registerUser(payload: RegisterUserPayload) {
 
   return 'Ok';
 }
+
+export async function getCurrentUser(token: string) {
+  if (!token) {
+    throw new Error('Unauthorized');
+  }
+
+  // 1. Cari user di database berdasarkan token
+  const result = await db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      createdAt: users.createdAt,
+    })
+    .from(users)
+    .where(eq(users.token, token))
+    .limit(1);
+
+  // 2. Jika tidak ditemukan, lempar error Unauthorized
+  const user = result[0];
+  if (!user) {
+    throw new Error('Unauthorized');
+  }
+
+  return user;
+}
