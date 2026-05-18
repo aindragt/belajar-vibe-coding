@@ -19,17 +19,25 @@ export const usersRoutes = new Elysia()
           data: result,
         };
       } catch (error: any) {
-        set.status = 400;
+        const message = error.message || '';
+        if (message === 'email sudah terdaftar') {
+          set.status = 400;
+          return {
+            error: message,
+          };
+        }
+
+        set.status = 500;
         return {
-          error: error.message || 'Terjadi kesalahan internal',
+          error: 'Terjadi kesalahan internal pada server',
         };
       }
     },
     {
       body: t.Object({
-        name: t.String(),
-        email: t.String(),
-        password: t.String(),
+        name: t.String({ minLength: 1, maxLength: 255 }),
+        email: t.String({ format: 'email', maxLength: 255 }),
+        password: t.String({ minLength: 6, maxLength: 255 }),
       }),
     }
   )
