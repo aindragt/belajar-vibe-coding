@@ -1,84 +1,69 @@
-# Panduan Implementasi: Fitur Registrasi User
+# Panduan Implementasi: Fitur Dapatkan User Saat Ini (Get Current User)
 
-Dokumen ini berisi panduan langkah demi langkah untuk mengimplementasikan fitur registrasi user menggunakan **ElysiaJS**, **Bun**, dan **Drizzle ORM** (MySQL). Panduan ini dirancang agar mudah diikuti oleh Junior Programmer atau AI Model.
+Dokumen ini berisi panduan langkah demi langkah untuk mengimplementasikan fitur "Get Current User" berdasarkan token otorisasi. Panduan ini dirancang agar mudah diikuti oleh Junior Programmer atau AI Model.
 
 ## 1. Pembaruan Skema Database (Drizzle ORM)
-Kita perlu memperbarui skema tabel `users` agar sesuai dengan kebutuhan sistem autentikasi.
+Agar kita dapat mencocokkan token yang dikirim melalui *Header*, kita perlu menambahkan kolom `token` di tabel `users`.
 **File Target:** `src/db/schema.ts`
 
-- Modifikasi tabel `users` yang sudah ada agar memiliki field berikut:
-  - `id`: tipe integer, primary key, auto increment (`serial` pada Drizzle).
-  - `name`: tipe varchar (length 255), not null.
-  - `email`: tipe varchar (length 255), not null, harus unik.
-  - `password`: tipe varchar (length 255), not null (kolom ini akan menyimpan hash bcrypt, bukan plain text).
-  - `created_at`: tipe timestamp, not null, dengan nilai default `current_timestamp`.
-
-**Langkah Sinkronisasi:**
-Setelah `schema.ts` diubah, jangan lupa untuk menjalankan migrasi ke database (misal menggunakan `bun run db:push`).
+- Tambahkan field `token` ke tabel `users` dengan tipe `varchar(255)`. Field ini diperbolehkan memiliki nilai kosong (`null` atau tidak ada `notNull()`), karena setelah proses registrasi, pengguna baru biasanya belum memiliki token hingga mereka melakukan login.
+- **Langkah Sinkronisasi:**
+  Setelah `schema.ts` diperbarui, jalankan perintah migrasi ke database:
+  ```bash
+  bun run db:push
+  ```
 
 ## 2. Pembuatan Service Logic (Business Logic)
-Kita akan memisahkan *business logic* dari *routing* agar kode lebih terstruktur.
-**Struktur Folder:** Buat folder baru `src/services`
+Kita akan menambahkan fungsi untuk memvalidasi token dan mencari data user di database.
 **File Target:** `src/services/users-service.ts`
 
 **Tugas di dalam file ini:**
-1. Buat fungsi/method asynchronous untuk registrasi (misalnya `registerUser(payload)`).
-2. **Validasi Email:** Lakukan pencarian ke tabel `users` menggunakan Drizzle untuk mengecek apakah `email` dari payload sudah ada.
-3. **Handle Error Duplikasi:** Jika email ditemukan, fungsi harus melemparkan error atau mereturn indikator kegagalan spesifik ("email sudah terdaftar").
-4. **Hashing Password:** Hash password dari payload menggunakan algoritma `bcrypt`. 
-   *(Saran: Karena kita menggunakan Bun, Anda bisa langsung menggunakan API bawaan `Bun.password.hash(password, "bcrypt")` tanpa perlu menginstall package pihak ketiga).*
-5. **Insert Data:** Simpan data (`name`, `email`, `password` yang sudah di-hash) ke dalam database menggunakan Drizzle.
+1. Buat fungsi/method asynchronous baru (misalnya `getCurrentUser(token: string)`).
+2. **Pencarian Database:** Lakukan *query* ke tabel `users` menggunakan Drizzle untuk mencari satu baris di mana kolom `token` sama persis dengan argumen `token` yang diberikan.
+3. **Handle Not Found:** Jika token kosong atau user tidak ditemukan berdasarkan token tersebut, fungsi harus melemparkan error (contoh: `throw new Error("Unauthorized")`) atau me-return `null`.
+4. **Sanitasi Data:** Jika user ditemukan, pastikan fungsi tidak mengembalikan data yang rahasia. Jangan kembalikan `password` atau `token`. Kembalikan hanya field `id`, `name`, `email`, dan `createdAt`.
 
-## 3. Pembuatan Routing (ElysiaJS)
-Routing bertugas untuk menangani HTTP request dan memberikan response yang sesuai.
-**Struktur Folder:** Buat folder baru `src/routes`
+## 3. Pembaruan Routing (ElysiaJS)
+Routing bertugas untuk menangkap header HTTP, mengekstrak token, dan memberikan respons sesuai spesifikasi.
 **File Target:** `src/routes/users-routes.ts`
 
 **Tugas di dalam file ini:**
-1. Inisialisasi instance plugin route dari Elysia.
-2. Buat endpoint `POST /api/users`.
-3. Tambahkan validasi tipe untuk Request Body menggunakan skema bawaan Elysia (`t.Object`), pastikan `name`, `email`, dan `password` bertipe string dan wajib diisi.
-4. Di dalam handler, panggil fungsi dari `users-service.ts`.
-5. Tangkap hasil/error dari service, lalu kembalikan HTTP response sesuai spesifikasi.
-
-## 4. Integrasi Routing ke Entry Point
-Integrasikan module routing yang baru dibuat ke server utama.
-**File Target:** `src/index.ts`
-
-- Import module route dari `src/routes/users-routes.ts`.
-- Daftarkan (use) route tersebut ke instance utama `Elysia`.
-- Hapus endpoint dummy `/users` yang mungkin sebelumnya ada di `index.ts` agar tidak bentrok.
+1. Tambahkan endpoint baru pada instance Elysia yang ada: `GET /api/users/current`.
+2. **Ekstrak Header:** Ambil nilai token dari HTTP Header `Authorization`. Pastikan Anda menangani format standar `Bearer <token>`. Hilangkan atau potong substring `"Bearer "` untuk mendapatkan token aslinya.
+3. **Panggil Service:** Panggil fungsi `getCurrentUser(token)` dari `users-service.ts`.
+4. **Penanganan Response:**
+   - **Sukses:** Jika service mengembalikan data user, susun dan kembalikan ke dalam objek JSON dengan key `"data"`.
+   - **Error (401 Unauthorized):** Jika header kosong, format salah, atau service melemparkan error "Unauthorized", tangkap error tersebut (`catch`) lalu atur status code HTTP menjadi `401`. Kembalikan objek JSON dengan key `"error"`.
 
 ---
 
 ## Spesifikasi API Reference
 
-**Endpoint:** `POST /api/users`
+**Endpoint:** `GET /api/users/current`
 
-**Request Body:**
+**Headers yang Dibutuhkan:**
+- `Authorization: Bearer <token>`
+
+**Response Body (Success - HTTP 200 OK):**
 ```json
 {
-    "name": "Indra Pramudya",
-    "email": "aindragt@gmail.com",
-    "password": "rahasia"    
+    "data": {
+        "id": 1,
+        "name": "Indra Pramudya",
+        "email": "aindragt@gmail.com",
+        "created_at": "timestamp"
+    }
 }
 ```
 
-**Response Body (Success - 200/201):**
+**Response Body (Error - HTTP 401 Unauthorized):**
+*(Ditampilkan jika tidak ada header, token tidak valid, atau data user tidak ditemukan)*
 ```json
 {
-    "data": "Ok"
-}
-```
-
-**Response Body (Error - 400 Bad Request):**
-*(Ditampilkan jika email sudah pernah diregistrasikan)*
-```json
-{
-    "error": "email sudah terdaftar"
+    "error": "Unauthorized"
 }
 ```
 
 ---
 **Catatan Penting untuk Implementator:**
-Harap patuhi struktur arsitektur ini. *Controllers / Route handlers* tidak boleh mengeksekusi sintaks Drizzle secara langsung; seluruh komunikasi ke database harus melalui layer `services`.
+Harap pertahankan prinsip pemisahan kode (*separation of concerns*). Modul `routes` (controller) dilarang berinteraksi dengan Drizzle ORM atau database secara langsung. Seluruh pemrosesan dan pencarian database harus diletakkan di layer `services`.
