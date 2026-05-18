@@ -1,5 +1,5 @@
 import { db } from '../db';
-import { users } from '../db/schema';
+import { users, session } from '../db/schema';
 import { eq } from 'drizzle-orm';
 
 export interface RegisterUserPayload {
@@ -60,4 +60,18 @@ export async function getCurrentUser(token: string) {
   }
 
   return user;
+}
+
+export async function logoutUser(token: string) {
+  if (!token) {
+    throw new Error('Unauthorized');
+  }
+
+  const result = await db.delete(session).where(eq(session.token, token));
+
+  if (!result[0] || result[0].affectedRows === 0) {
+    throw new Error('Unauthorized');
+  }
+
+  return 'Logout successful';
 }
