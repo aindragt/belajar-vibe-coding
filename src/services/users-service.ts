@@ -45,6 +45,52 @@ export async function registerUser(payload: RegisterUserPayload) {
   return 'Ok';
 }
 
+export interface LoginUserPayload {
+  email: string;
+  password: string;
+}
+
+/**
+ * Melakukan autentikasi pengguna dengan email dan password.
+ * Fungsi ini akan memverifikasi kredensial, generate token baru,
+ * dan menyimpan token ke database.
+ *
+ * @param {LoginUserPayload} payload - Data login (email, password)
+ * @returns {Promise<object>} Mengembalikan object { token, name, email }
+ * @throws {Error} Akan melempar error jika email tidak ditemukan atau password salah
+ */
+export async function loginUser(payload: LoginUserPayload) {
+  // 1. Cari user berdasarkan email
+  const result = await db
+    .select()
+    .from(users)
+    .where(eq(users.email, payload.email))
+    .limit(1);
+
+  const user = result[0];
+  if (!user) {
+    throw new Error('Email atau password salah');
+  }
+
+  // 2. Verifikasi password
+  const isPasswordValid = await Bun.password.verify(payload.password, user.password);
+  if (!isPasswordValid) {
+    throw new Error('Email atau password salah');
+  }
+
+  // 3. Generate token baru
+  const token = crypto.randomUUID();
+
+  // 4. Simpan token ke database
+  await db.update(users).set({ token }).where(eq(users.id, user.id));
+
+  return {
+    token,
+    name: user.name,
+    email: user.email,
+  };
+}
+
 /**
  * Mendapatkan data pengguna yang sedang login berdasarkan token autentikasi.
  * Fungsi ini mencari pengguna di database berdasarkan token yang diberikan.
