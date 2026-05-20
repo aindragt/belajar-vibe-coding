@@ -8,6 +8,15 @@ export interface RegisterUserPayload {
   password: string;
 }
 
+/**
+ * Mendaftarkan pengguna baru ke dalam sistem.
+ * Fungsi ini akan mengecek apakah email sudah terdaftar, melakukan hashing password,
+ * dan menyimpan data pengguna baru ke database.
+ * 
+ * @param {RegisterUserPayload} payload - Data pengguna yang akan didaftarkan (name, email, password)
+ * @returns {Promise<string>} Mengembalikan string 'Ok' jika registrasi berhasil
+ * @throws {Error} Akan melempar error jika email sudah terdaftar
+ */
 export async function registerUser(payload: RegisterUserPayload) {
   // 1. Check if email is already registered
   const existingUser = await db
@@ -36,6 +45,60 @@ export async function registerUser(payload: RegisterUserPayload) {
   return 'Ok';
 }
 
+export interface LoginUserPayload {
+  email: string;
+  password: string;
+}
+
+/**
+ * Melakukan autentikasi pengguna dengan email dan password.
+ * Fungsi ini akan memverifikasi kredensial, generate token baru,
+ * dan menyimpan token ke database.
+ *
+ * @param {LoginUserPayload} payload - Data login (email, password)
+ * @returns {Promise<object>} Mengembalikan object { token, name, email }
+ * @throws {Error} Akan melempar error jika email tidak ditemukan atau password salah
+ */
+export async function loginUser(payload: LoginUserPayload) {
+  // 1. Cari user berdasarkan email
+  const result = await db
+    .select()
+    .from(users)
+    .where(eq(users.email, payload.email))
+    .limit(1);
+
+  const user = result[0];
+  if (!user) {
+    throw new Error('Email atau password salah');
+  }
+
+  // 2. Verifikasi password
+  const isPasswordValid = await Bun.password.verify(payload.password, user.password);
+  if (!isPasswordValid) {
+    throw new Error('Email atau password salah');
+  }
+
+  // 3. Generate token baru
+  const token = crypto.randomUUID();
+
+  // 4. Simpan token ke database
+  await db.update(users).set({ token }).where(eq(users.id, user.id));
+
+  return {
+    token,
+    name: user.name,
+    email: user.email,
+  };
+}
+
+/**
+ * Mendapatkan data pengguna yang sedang login berdasarkan token autentikasi.
+ * Fungsi ini mencari pengguna di database berdasarkan token yang diberikan.
+ * 
+ * @param {string} token - Token autentikasi pengguna
+ * @returns {Promise<object>} Mengembalikan data pengguna (id, name, email, createdAt)
+ * @throws {Error} Akan melempar error 'Unauthorized' jika token tidak ada atau pengguna tidak ditemukan
+ */
 export async function getCurrentUser(token: string) {
   if (!token) {
     throw new Error('Unauthorized');
@@ -62,6 +125,14 @@ export async function getCurrentUser(token: string) {
   return user;
 }
 
+/**
+ * Mengeluarkan pengguna dari sistem (logout) dengan menghapus sesi berdasarkan token.
+ * Fungsi ini akan mencari dan menghapus data sesi yang cocok dengan token di database.
+ * 
+ * @param {string} token - Token autentikasi pengguna yang akan dihapus sesinya
+ * @returns {Promise<string>} Mengembalikan pesan sukses jika logout berhasil
+ * @throws {Error} Akan melempar error 'Unauthorized' jika token tidak valid atau sesi gagal dihapus
+ */
 export async function logoutUser(token: string) {
   if (!token) {
     throw new Error('Unauthorized');
