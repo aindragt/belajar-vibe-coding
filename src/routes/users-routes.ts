@@ -39,6 +39,11 @@ export const usersRoutes = new Elysia()
         email: t.String({ format: 'email', maxLength: 255 }),
         password: t.String({ minLength: 6, maxLength: 255 }),
       }),
+      detail: {
+        tags: ['Users'],
+        summary: 'Registrasi User Baru',
+        description: 'Mendaftarkan pengguna baru dengan nama, email, dan password.',
+      }
     }
   )
   .get(
@@ -62,6 +67,16 @@ export const usersRoutes = new Elysia()
           error: 'Unauthorized',
         };
       }
+    },
+    {
+      headers: t.Object({
+        authorization: t.String({ description: 'Format: Bearer <token>' })
+      }),
+      detail: {
+        tags: ['Users'],
+        summary: 'Dapatkan User Saat Ini',
+        description: 'Mengambil data profil pengguna yang sedang aktif berdasarkan token otorisasi.',
+      }
     }
   )
   .delete(
@@ -80,5 +95,16 @@ export const usersRoutes = new Elysia()
           error: 'Unauthorized',
         };
       }
+    },
+    {
+      headers: t.Object({
+        authorization: t.String({ description: 'Format: Bearer <token>' })
+      }),
+      detail: {
+        tags: ['Users'],
+        summary: 'Logout User',
+        description: 'Menghapus sesi pengguna yang aktif dari database.',
+      }
     }
   );
+
