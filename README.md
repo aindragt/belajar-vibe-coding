@@ -1,6 +1,6 @@
 # Belajar Vibe Coding (API Backend)
 
-Aplikasi ini adalah sebuah *REST API boilerplate* yang dibangun menggunakan ekosistem modern dan super cepat: **Bun**, **ElysiaJS**, dan **Drizzle ORM**. Proyek ini mendemonstrasikan implementasi autentikasi (Registrasi, Current User, Logout), manajemen sesi, arsitektur berbasis *controller-service*, serta strategi pengujian otomatis (*unit testing*) menggunakan lingkungan basis data murni.
+Aplikasi ini adalah sebuah *REST API boilerplate* yang dibangun menggunakan ekosistem modern dan super cepat: **Bun**, **ElysiaJS**, dan **Drizzle ORM**. Proyek ini mendemonstrasikan implementasi autentikasi (Registrasi, Login, Current User, Logout), manajemen sesi, arsitektur berbasis *controller-service*, integrasi OpenAPI (Swagger UI), serta strategi pengujian otomatis (*unit testing*) menggunakan lingkungan basis data murni.
 
 ---
 
@@ -11,6 +11,7 @@ Aplikasi ini adalah sebuah *REST API boilerplate* yang dibangun menggunakan ekos
 - **Object-Relational Mapping (ORM)**: [Drizzle ORM](https://orm.drizzle.team/)
 - **Database Driver**: `mysql2` (Menghubungkan aplikasi dengan database MySQL)
 - **Validation**: TypeBox bawaan Elysia (`t`)
+- **API Documentation**: [@elysiajs/swagger](https://github.com/elysiajs/elysia-swagger) (Integrasi OpenAPI & Swagger UI interaktif)
 - **Testing**: `bun:test` (Test runner bawaan Bun yang sangat cepat)
 
 ---
@@ -28,13 +29,29 @@ Aplikasi ini menggunakan pola arsitektur **Controller-Service** yang memisahkan 
 │   │   ├── index.ts    # Pengaturan koneksi pool MySQL
 │   │   └── schema.ts   # Skema Drizzle ORM (Tabel users & session)
 │   ├── routes/         # Routing Elysia (Controller layer)
-│   │   └── users-routes.ts  # Endpoint API untuk entitas pengguna
+│   │   └── users-routes.ts  # Endpoint API untuk entitas pengguna & integrasi OpenAPI
 │   ├── services/       # Business logic (Service layer)
-│   │   └── users-service.ts # Logika pendaftaran, autentikasi, dan validasi DB
-│   └── index.ts        # Entry point aplikasi utama
+│   │   └── users-service.ts # Logika pendaftaran, autentikasi login, profil, dan validasi DB
+│   └── index.ts        # Entry point aplikasi utama & inisialisasi Swagger
 └── tests/              # Folder untuk pengujian (Unit & Integration)
     └── users.test.ts   # Skenario pengujian API pengguna menggunakan bun:test
 ```
+
+---
+
+## 📖 Dokumentasi API (Swagger UI)
+
+Proyek ini telah dilengkapi dengan dokumentasi API interaktif menggunakan Swagger UI (OpenAPI 3.0). Semua endpoint terdaftar dengan skema request body, parameter, header otorisasi, dan contoh response yang lengkap.
+
+- **URL Akses**: **[http://localhost:3000/swagger](http://localhost:3000/swagger)**
+- **Spesifikasi JSON Mentah**: **[http://localhost:3000/swagger/json](http://localhost:3000/swagger/json)**
+
+### Cara Menguji Endpoint Terproteksi di Swagger UI:
+1. Jalankan endpoint **Login User** (`POST /api/users/login`) dengan akun terdaftar.
+2. Salin nilai `token` yang dikembalikan pada response body.
+3. Klik tombol **"Authorize"** (ikon gembok) di pojok kanan atas Swagger UI.
+4. Masukkan token dengan format: `Bearer <token_anda>` (contoh: `Bearer 550e8400-e29b-41d4-a716-446655440000`).
+5. Klik **Authorize** dan tutup modal. Sekarang Anda dapat mengakses endpoint `GET /api/users/current` dan `DELETE /api/users/logout` langsung dari Swagger UI.
 
 ---
 
@@ -48,11 +65,11 @@ Menyimpan informasi identitas pengguna.
 - `name`: `VARCHAR(255)` (Not Null)
 - `email`: `VARCHAR(255)` (Not Null, Unique)
 - `password`: `VARCHAR(255)` (Not Null, menyimpan _hashed password_ menggunakan bcrypt)
-- `token`: `VARCHAR(255)` (Digunakan untuk sesi langsung / legacy token)
+- `token`: `VARCHAR(255)` (Digunakan untuk sesi aktif saat ini)
 - `createdAt`: `TIMESTAMP` (Default `NOW()`)
 
 ### 2. Tabel `session`
-Menyimpan data sesi ketika pengguna berhasil login/aktif, dapat menampung multi-device login.
+Menyimpan data sesi ketika pengguna berhasil login/aktif, dapat menampung multi-device login (legacy session management).
 - `id`: `INT` (Primary Key, Auto Increment)
 - `userId`: `INT` (Not Null, Foreign Key ke `users.id`)
 - `token`: `VARCHAR(255)` (Not Null, Unique, Bearer token)
@@ -69,7 +86,7 @@ Menyimpan data sesi ketika pengguna berhasil login/aktif, dapat menampung multi-
 - **Payload (JSON)**:
   ```json
   {
-    "name": "Indra",
+    "name": "Indra Galih",
     "email": "indra@example.com",
     "password": "secretpassword"
   }
@@ -78,9 +95,34 @@ Menyimpan data sesi ketika pengguna berhasil login/aktif, dapat menampung multi-
   ```json
   { "data": "Ok" }
   ```
-- **Respons Gagal**: `400 Bad Request` (Email sudah terdaftar) atau `422 Unprocessable Entity` (Gagal validasi schema payload).
+- **Respons Gagal**: 
+  - `400 Bad Request`: Email sudah terdaftar (`{ "error": "email sudah terdaftar" }`)
+  - `422 Unprocessable Entity`: Gagal validasi schema input payload
 
-### 2. Mendapatkan Data Pengguna Saat Ini (Current User)
+### 2. Login User (Autentikasi)
+- **Endpoint**: `POST /api/users/login`
+- **Tujuan**: Melakukan verifikasi email & password, mengembalikan token akses unik.
+- **Payload (JSON)**:
+  ```json
+  {
+    "email": "indra@example.com",
+    "password": "secretpassword"
+  }
+  ```
+- **Respons Sukses (200 OK)**:
+  ```json
+  {
+    "data": {
+      "token": "550e8400-e29b-41d4-a716-446655440000",
+      "name": "Indra Galih",
+      "email": "indra@example.com"
+    }
+  }
+  ```
+- **Respons Gagal**:
+  - `401 Unauthorized`: Email atau password salah (`{ "error": "Email atau password salah" }`)
+
+### 3. Mendapatkan Data Pengguna Saat Ini (Get Current User)
 - **Endpoint**: `GET /api/users/current`
 - **Tujuan**: Mengambil data pengguna berdasarkan *Bearer token* yang sedang aktif.
 - **Header Wajib**: 
@@ -90,15 +132,16 @@ Menyimpan data sesi ketika pengguna berhasil login/aktif, dapat menampung multi-
   {
     "data": {
       "id": 1,
-      "name": "Indra",
+      "name": "Indra Galih",
       "email": "indra@example.com",
-      "created_at": "2023-10-25T10:00:00.000Z"
+      "created_at": "2026-01-01T00:00:00.000Z"
     }
   }
   ```
-- **Respons Gagal**: `401 Unauthorized` (Token hilang, format salah, atau token tidak ditemukan).
+- **Respons Gagal**: 
+  - `401 Unauthorized`: Token hilang, format salah, atau token tidak ditemukan (`{ "error": "Unauthorized" }`)
 
-### 3. Logout User
+### 4. Logout User
 - **Endpoint**: `DELETE /api/users/logout`
 - **Tujuan**: Menghapus sesi / token pengguna yang sedang aktif dari database.
 - **Header Wajib**:
@@ -107,7 +150,8 @@ Menyimpan data sesi ketika pengguna berhasil login/aktif, dapat menampung multi-
   ```json
   { "data": "Logout successful" }
   ```
-- **Respons Gagal**: `401 Unauthorized` (Sesi sudah dihapus atau tidak valid).
+- **Respons Gagal**: 
+  - `401 Unauthorized`: Sesi sudah dihapus atau tidak valid (`{ "error": "Unauthorized" }`)
 
 ---
 
@@ -128,6 +172,9 @@ Menyimpan data sesi ketika pengguna berhasil login/aktif, dapat menampung multi-
    Pastikan Anda sudah membuat schema/database bernama `belajar_vibe_coding` di MySQL. Kemudian, jalankan perintah migrasi Drizzle untuk membuat tabel:
    ```bash
    bun run db:generate
+   ```
+   Lalu terapkan skema ke database:
+   ```bash
    bun run db:push
    ```
 
